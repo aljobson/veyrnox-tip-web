@@ -1,0 +1,10 @@
+name = "veyrnox-tip-web"
+type = "javascript"
+account_id = "fb18d9f7052afbea5a5e0eae69948af2"
+pages_build_output_dir = ".next/static"
+
+[env.production]
+name = "veyrnox-tip-web-prod"
+routes = [
+  { pattern = "tip.veyrnox.com/*", zone_name = "veyrnox.com" }
+]
