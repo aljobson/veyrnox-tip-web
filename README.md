@@ -5,10 +5,8 @@ Frontend application for the Veyrnox TIP (Threat Intelligence Platform) dashboar
 ## Stack
 
 - **Framework:** Next.js 14
-- **Styling:** Styled Components
-- **Charts:** Recharts
-- **Animation:** Motion
-- **Deployment:** Cloudflare Pages
+- **Styling:** Styled Components (with App Router SSR registry)
+- **Deployment:** Cloudflare Pages via `@cloudflare/next-on-pages`
 
 ## Design System
 
@@ -29,10 +27,31 @@ Open http://localhost:3000 to view the dashboard.
 
 ## Environment Setup
 
-Create `.env.local`:
+Local dev — create `.env.local`:
 
 ```
-NEXT_PUBLIC_TIP_API_ENDPOINT=https://api.tip.veyrnox.com
+TIP_API_ENDPOINT=https://api.tip.veyrnox.com
+TIP_API_KEY=vtip_xxx
+TIP_SIGNING_SECRET=xxx
+```
+
+These are **server-side only** — never prefix with `NEXT_PUBLIC_`. The browser
+talks to `/api/tip-proxy/*`, which signs upstream requests using the secret.
+
+## Cloudflare configuration
+
+`account_id` is not committed. Set it in your shell:
+
+```
+export CLOUDFLARE_ACCOUNT_ID=...
+```
+
+Production secrets:
+
+```
+wrangler pages secret put TIP_API_KEY --project-name veyrnox-tip-web-prod
+wrangler pages secret put TIP_SIGNING_SECRET --project-name veyrnox-tip-web-prod
+wrangler pages secret put TIP_API_ENDPOINT --project-name veyrnox-tip-web-prod
 ```
 
 ## Building

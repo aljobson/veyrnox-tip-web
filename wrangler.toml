@@ -1,10 +1,16 @@
 name = "veyrnox-tip-web"
-type = "javascript"
-account_id = "fb18d9f7052afbea5a5e0eae69948af2"
-pages_build_output_dir = ".next/static"
+pages_build_output_dir = ".vercel/output/static"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# account_id is read from CLOUDFLARE_ACCOUNT_ID env var (see README).
+# Do not commit it here.
 
 [env.production]
 name = "veyrnox-tip-web-prod"
 routes = [
   { pattern = "tip.veyrnox.com/*", zone_name = "veyrnox.com" }
 ]
+
+# Server-side secrets must be set via `wrangler pages secret put`
+# (TIP_API_KEY, TIP_SIGNING_SECRET, TIP_API_ENDPOINT). Never in this file.
