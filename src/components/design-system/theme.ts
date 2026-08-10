@@ -32,7 +32,7 @@ export const tipTheme = {
     md: '24px',
     lg: '32px',
     xl: '48px',
-    2xl: '64px',
+    '2xl': '64px',
   },
   shadows: {
     sm: '0 1px 3px rgba(0,0,0,0.3)',
