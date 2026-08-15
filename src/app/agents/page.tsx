@@ -1,3 +1,5 @@
+export const metadata = { robots: { index: false, follow: false } }
+
 export default function AgentsPage() {
   return (
     <main style={{ padding: '48px', textAlign: 'center', color: '#8b949e' }}>

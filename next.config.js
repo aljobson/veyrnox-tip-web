@@ -4,6 +4,8 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
+      // TODO: nonce-based CSP — replace 'unsafe-inline' with per-request nonces
+      // via middleware. Tracked separately; not in this PR to keep scope tight.
       "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",

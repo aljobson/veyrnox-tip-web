@@ -19,7 +19,7 @@ Built with the **TIP-SENTINEL design system** for Microsoft Sentinel-themed aest
 ## Quick Start
 
 ```bash
-npm install
+npm ci      # reproducible install from package-lock.json
 npm run dev
 ```
 
