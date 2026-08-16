@@ -15,10 +15,13 @@ routes = [
 # Server-side secrets must be set via `wrangler pages secret put`
 # (TIP_API_KEY, TIP_SIGNING_SECRET, TIP_API_ENDPOINT). Never in this file.
 
-# Per-IP rate limit counter for /api/tip-proxy. Create with:
+# Per-IP rate limit counter for /api/tip-proxy.
+# MUST create the KV namespace and paste its id below BEFORE deploy:
 #   wrangler kv namespace create TIP_RATE_LIMIT
-# then paste the returned id below (and a preview_id for `wrangler pages dev`).
-# The proxy fails open if this binding is absent, but production MUST set it.
-# [[kv_namespaces]]
-# binding = "TIP_RATE_LIMIT"
-# id = "<paste-namespace-id>"
+#   wrangler kv namespace create TIP_RATE_LIMIT --preview   # for `wrangler pages dev`
+# then replace the placeholder ids. The proxy REFUSES to serve in production
+# when this binding is missing (see src/app/api/tip-proxy/[[...path]]/route.ts).
+[[kv_namespaces]]
+binding = "TIP_RATE_LIMIT"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_KV_PREVIEW_ID"
