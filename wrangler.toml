@@ -16,12 +16,20 @@ routes = [
 # (TIP_API_KEY, TIP_SIGNING_SECRET, TIP_API_ENDPOINT). Never in this file.
 
 # Per-IP rate limit counter for /api/tip-proxy.
-# MUST create the KV namespace and paste its id below BEFORE deploy:
-#   wrangler kv namespace create TIP_RATE_LIMIT
-#   wrangler kv namespace create TIP_RATE_LIMIT --preview   # for `wrangler pages dev`
-# then replace the placeholder ids. The proxy REFUSES to serve in production
-# when this binding is missing (see src/app/api/tip-proxy/[[...path]]/route.ts).
-[[kv_namespaces]]
-binding = "TIP_RATE_LIMIT"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
-preview_id = "REPLACE_WITH_KV_PREVIEW_ID"
+#
+# MUST configure before first deploy — the proxy REFUSES to serve in production
+# when this binding is missing (fail-closed guard in
+# src/app/api/tip-proxy/[[...path]]/route.ts):
+#
+#   1. Create namespaces:
+#        wrangler kv namespace create TIP_RATE_LIMIT
+#        wrangler kv namespace create TIP_RATE_LIMIT --preview  # for `wrangler pages dev`
+#   2. Uncomment the block below and paste the returned ids.
+#
+# Left commented so a fresh clone cannot accidentally deploy with a placeholder
+# id that Wrangler will happily accept and then fail at runtime.
+#
+# [[kv_namespaces]]
+# binding = "TIP_RATE_LIMIT"
+# id = "PASTE_REAL_KV_NAMESPACE_ID_HERE"
+# preview_id = "PASTE_REAL_KV_PREVIEW_ID_HERE"
