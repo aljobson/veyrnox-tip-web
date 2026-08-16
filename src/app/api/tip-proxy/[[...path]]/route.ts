@@ -41,38 +41,55 @@ function validateSegments(segs: string[]): string | null {
   return '/' + segs.join('/')
 }
 
-async function sign(secret: string, method: string, pathAndQuery: string, body: string, ts: string) {
+async function sign(
+  secret: string,
+  method: string,
+  pathAndQuery: string,
+  contentType: string,
+  body: string,
+  ts: string,
+) {
   const enc = new TextEncoder()
   const key = await crypto.subtle.importKey(
     'raw', enc.encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false, ['sign'],
   )
-  const msg = `${method}\n${pathAndQuery}\n${ts}\n${body}`
+  const msg = `${method}\n${pathAndQuery}\n${contentType}\n${ts}\n${body}`
   const sig = await crypto.subtle.sign('HMAC', key, enc.encode(msg))
   return Array.from(new Uint8Array(sig))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('')
 }
 
+// Narrow: only swallow the "no request context" case from
+// @cloudflare/next-on-pages (local dev / non-Pages runtimes). Any other
+// exception is a real bug — propagate so the fail-closed KV guard downstream
+// (isPages && !kv → 500) cannot be silently disabled.
 function getEnv(): { env: Env; isPages: boolean } {
   try {
     return { env: getRequestContext().env as unknown as Env, isPages: true }
-  } catch {
-    // Local dev / non-Pages runtime fallback.
-    return { env: process.env as unknown as Env, isPages: false }
+  } catch (e) {
+    const msg = (e as { message?: unknown })?.message
+    if (typeof msg === 'string' && /no.*context/i.test(msg)) {
+      return { env: process.env as unknown as Env, isPages: false }
+    }
+    throw e
   }
 }
 
-// ponytail: fixed-window per-IP counter via KV — eventually consistent, so a
-// burst that races the read/write can briefly exceed the cap. Upgrade to a
-// Durable Object atomic counter (or sliding window) if abuse survives this cap.
+// ponytail: fixed-window per-IP counter via KV with pre-write jitter — the
+// read→+1→put is still non-atomic, so a concurrent burst can briefly overshoot
+// the cap. Jitter spreads writes so the last-writer-wins convergence lands
+// closer to the real count. Upgrade path: Durable Object atomic counter when
+// abuse survives this cap.
 async function checkRateLimit(kv: RateLimitKV | undefined, ip: string): Promise<boolean> {
   if (!kv) return true
   const minute = Math.floor(Date.now() / 60_000)
   const key = `rl:${ip}:${minute}`
   const current = parseInt((await kv.get(key)) ?? '0', 10) + 1
   if (current > RATE_LIMIT_PER_MIN) return false
+  await new Promise(r => setTimeout(r, Math.random() * 50))
   await kv.put(key, String(current), { expirationTtl: 90 })
   return true
 }
@@ -144,10 +161,13 @@ async function handle(req: Request, ctx: Ctx) {
     return new Response('Bad path', { status: 400 })
   }
 
-  // Preserve the exact query string the client sent, bind it into the
-  // signature, and forward it upstream so callers can pass filters/pagination.
-  const search = new URL(req.url).search
-  const pathAndQuery = subPath + search
+  // Canonicalize the query string (sorted params) before both signing AND
+  // forwarding. Otherwise `?a=1&b=2` and `?b=2&a=1` sign differently but hit
+  // the same upstream data, breaking downstream cache dedup.
+  const sp = new URLSearchParams(new URL(req.url).search)
+  sp.sort()
+  const canonicalSearch = sp.toString()
+  const pathAndQuery = subPath + (canonicalSearch ? '?' + canonicalSearch : '')
 
   const hasBody = !(req.method === 'GET' || req.method === 'DELETE')
   let body = ''
@@ -166,22 +186,30 @@ async function handle(req: Request, ctx: Ctx) {
     body = result.body
   }
 
+  // Bind content-type into the signature so an attacker can't swap
+  // application/json for text/plain (or vice versa) and change how the
+  // upstream parses the same body bytes.
+  const contentType = hasBody
+    ? (req.headers.get('content-type') ?? 'application/json')
+    : ''
   const ts = Date.now().toString()
-  const signature = await sign(secret, req.method, pathAndQuery, body, ts)
+  const signature = await sign(secret, req.method, pathAndQuery, contentType, body, ts)
 
   // Concatenate against the trimmed endpoint so `pathAndQuery` is used verbatim
   // in both the signature input and the outbound URL — no URL-normalization
   // can desync them.
   const upstreamUrl = endpoint.replace(/\/+$/, '') + pathAndQuery
 
+  const upstreamHeaders: Record<string, string> = {
+    'x-api-key': apiKey,
+    'x-timestamp': ts,
+    'x-signature': signature,
+  }
+  if (hasBody) upstreamHeaders['content-type'] = contentType
+
   const upstream = await fetch(upstreamUrl, {
     method: req.method,
-    headers: {
-      'content-type': req.headers.get('content-type') ?? 'application/json',
-      'x-api-key': apiKey,
-      'x-timestamp': ts,
-      'x-signature': signature,
-    },
+    headers: upstreamHeaders,
     body: body || undefined,
   })
 
@@ -192,8 +220,10 @@ async function handle(req: Request, ctx: Ctx) {
   upstream.headers.forEach((value, key) => {
     if (!HOP_BY_HOP.has(key.toLowerCase())) respHeaders.append(key, value)
   })
+  // Only default when upstream said nothing — text/plain is a safer guess than
+  // application/json (won't cause a client to JSON.parse arbitrary bytes).
   if (!respHeaders.has('content-type')) {
-    respHeaders.set('content-type', 'application/json')
+    respHeaders.set('content-type', 'text/plain; charset=utf-8')
   }
 
   return new Response(upstream.body, {
