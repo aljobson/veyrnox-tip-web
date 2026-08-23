@@ -1,7 +1,7 @@
 // Server-side proxy to the TIP API. Signs requests with a secret held only
 // in Cloudflare Pages env bindings (TIP_API_KEY, TIP_SIGNING_SECRET,
 // TIP_API_ENDPOINT). The browser never sees these values.
-import { getRequestContext } from '@cloudflare/next-on-pages'
+import { getOptionalRequestContext } from '@cloudflare/next-on-pages'
 
 export const runtime = 'edge'
 
@@ -62,27 +62,37 @@ async function sign(
     .join('')
 }
 
-// Narrow: only swallow the "no request context" case from
-// @cloudflare/next-on-pages (local dev / non-Pages runtimes). Any other
-// exception is a real bug — propagate so the fail-closed KV guard downstream
-// (isPages && !kv → 500) cannot be silently disabled.
+// Use `getOptionalRequestContext` so the "context not set" case (edge runtime
+// during build-time prerender, or dev fallbacks) returns `undefined` rather
+// than throwing — no fragile message-string matching needed. The only path
+// that still throws is calling this from the Node.js runtime; that specific
+// error carries the exact phrase "can only be run" which we match narrowly.
+// Any other exception is a real bug — propagate so the fail-closed KV guard
+// downstream (isPages && !kv → 500) cannot be silently disabled.
 function getEnv(): { env: Env; isPages: boolean } {
+  let ctx: { env: unknown } | undefined
   try {
-    return { env: getRequestContext().env as unknown as Env, isPages: true }
+    ctx = getOptionalRequestContext()
   } catch (e) {
     const msg = (e as { message?: unknown })?.message
-    if (typeof msg === 'string' && /no.*context/i.test(msg)) {
+    if (typeof msg === 'string' && msg.includes('can only be run')) {
       return { env: process.env as unknown as Env, isPages: false }
     }
     throw e
   }
+  if (ctx) return { env: ctx.env as Env, isPages: true }
+  return { env: process.env as unknown as Env, isPages: false }
 }
 
-// ponytail: fixed-window per-IP counter via KV with pre-write jitter — the
-// read→+1→put is still non-atomic, so a concurrent burst can briefly overshoot
-// the cap. Jitter spreads writes so the last-writer-wins convergence lands
-// closer to the real count. Upgrade path: Durable Object atomic counter when
-// abuse survives this cap.
+// ponytail: fixed-window per-IP counter via KV. read→+1→put is NOT atomic:
+// N concurrent requests in the same minute all read the same value, all pass
+// the ceiling check, then all write — effective cap is unbounded by burst
+// concurrency, not the RATE_LIMIT_PER_MIN constant. The jitter only smooths
+// last-writer-wins for the eventual stored count; it does not enforce the
+// ceiling. Real fix requires a Durable Object atomic counter (Pages must
+// bind to a DO class hosted in a separate Worker script — multi-step
+// rollout). Tracked at https://github.com/aljobson/veyrnox-tip-web/issues
+// (see "DO rate limiter migration").
 async function checkRateLimit(kv: RateLimitKV | undefined, ip: string): Promise<boolean> {
   if (!kv) return true
   const minute = Math.floor(Date.now() / 60_000)
