@@ -109,7 +109,7 @@ async function checkRateLimit(kv: RateLimitKV | undefined, ip: string): Promise<
 
 // Reads the request body while enforcing a hard byte cap mid-stream so a
 // chunked/no-Content-Length upload cannot buffer past the limit.
-async function readBodyCapped(req: Request, max: number): Promise<{ body: string; overflow: boolean }> {
+async function readBodyCapped(req: Request, max: number): Promise<{ body: string; overflow: boolean; invalid?: boolean }> {
   const reader = req.body?.getReader()
   if (!reader) return { body: '', overflow: false }
   const chunks: Uint8Array[] = []
@@ -128,7 +128,14 @@ async function readBodyCapped(req: Request, max: number): Promise<{ body: string
   const buf = new Uint8Array(total)
   let offset = 0
   for (const c of chunks) { buf.set(c, offset); offset += c.byteLength }
-  return { body: new TextDecoder().decode(buf), overflow: false }
+  try {
+    // Fatal decode — invalid UTF-8 is rejected instead of silently replaced
+    // with U+FFFD, which would produce a body the caller signs but which no
+    // longer matches the bytes the client sent.
+    return { body: new TextDecoder('utf-8', { fatal: true }).decode(buf), overflow: false }
+  } catch {
+    return { body: '', overflow: false, invalid: true }
+  }
 }
 
 async function handle(req: Request, ctx: Ctx) {
@@ -195,6 +202,9 @@ async function handle(req: Request, ctx: Ctx) {
     const result = await readBodyCapped(req, MAX_BODY_BYTES)
     if (result.overflow) {
       return new Response('Payload too large', { status: 413 })
+    }
+    if (result.invalid) {
+      return new Response('Invalid UTF-8 body', { status: 400 })
     }
     body = result.body
   }

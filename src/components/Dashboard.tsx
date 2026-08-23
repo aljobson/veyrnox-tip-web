@@ -61,25 +61,6 @@ const AuthSection = styled.div`
   align-items: center;
 `
 
-const Input = styled.input`
-  flex: 1;
-  min-width: 200px;
-  background: ${tipTheme.colors.surface_2};
-  border: 1px solid ${tipTheme.colors.border_primary};
-  color: ${tipTheme.colors.text_primary};
-  padding: ${tipTheme.spacing.xs} ${tipTheme.spacing.sm};
-  border-radius: 4px;
-  font-size: 13px;
-
-  &::placeholder { color: ${tipTheme.colors.text_tertiary}; }
-
-  &:focus {
-    outline: none;
-    border-color: ${tipTheme.colors.accent_primary};
-    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.1);
-  }
-`
-
 const Button = styled.button`
   background: ${tipTheme.colors.accent_primary};
   color: ${tipTheme.colors.surface_0};
@@ -151,19 +132,15 @@ const StatusBadge = styled.span<{ $status: 'connected' | 'disconnected' }>`
 const PLACEHOLDER = '—'
 
 export function Dashboard() {
+  // R7 low: dashboard used to show an "API Key" input that was discarded on
+  // Connect — proxy signs with the server-held TIP_API_KEY regardless. That
+  // misled operators into believing they were entering credentials and left
+  // typed secrets sitting in React state. Removed until the /api/connect
+  // HttpOnly-cookie exchange route (tracked in issue #9) ships.
   const [isConnected, setIsConnected] = useState(false)
-  const [apiKey, setApiKey] = useState('')
-  const [validationError, setValidationError] = useState('')
+  const [validationError] = useState('')
 
   const handleConnect = () => {
-    if (!apiKey) {
-      setValidationError('API key is required')
-      return
-    }
-    setValidationError('')
-    // Signing and API key resolution happen server-side via /api/tip-proxy.
-    // The client never sees or persists secrets.
-    // TODO: exchange apiKey via a server "connect" route that sets an HttpOnly cookie.
     setIsConnected(true)
   }
 
@@ -180,13 +157,6 @@ export function Dashboard() {
         <Subtitle>SIEM Threat Monitoring · Veyrnox</Subtitle>
 
         <AuthSection>
-          <Input
-            type="password"
-            placeholder="API Key (vtip_...)"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            disabled={isConnected}
-          />
           <Button onClick={handleConnect} disabled={isConnected}>
             {isConnected ? 'Connected' : 'Connect'}
           </Button>
