@@ -91,8 +91,10 @@ function getEnv(): { env: Env; isPages: boolean } {
 // last-writer-wins for the eventual stored count; it does not enforce the
 // ceiling. Real fix requires a Durable Object atomic counter (Pages must
 // bind to a DO class hosted in a separate Worker script — multi-step
-// rollout). Tracked at https://github.com/aljobson/veyrnox-tip-web/issues
-// (see "DO rate limiter migration").
+// rollout). Tracked in #9
+// (https://github.com/aljobson/veyrnox-tip-web/issues/9). The in-isolate
+// concurrency-cap mitigation was drafted but deferred — silent-login
+// dashboard bursts hit this bucket and would 429 until the client rolls out.
 async function checkRateLimit(kv: RateLimitKV | undefined, ip: string): Promise<boolean> {
   if (!kv) return true
   const minute = Math.floor(Date.now() / 60_000)
@@ -100,7 +102,8 @@ async function checkRateLimit(kv: RateLimitKV | undefined, ip: string): Promise<
   const current = parseInt((await kv.get(key)) ?? '0', 10) + 1
   if (current > RATE_LIMIT_PER_MIN) return false
   await new Promise(r => setTimeout(r, Math.random() * 50))
-  await kv.put(key, String(current), { expirationTtl: 90 })
+  // 65s TTL: minute bucket + small safety margin, no wasted storage window.
+  await kv.put(key, String(current), { expirationTtl: 65 })
   return true
 }
 
